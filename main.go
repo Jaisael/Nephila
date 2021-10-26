@@ -16,7 +16,6 @@ func main() {
 		log.Fatal(err)
 	}
 	defer db.Close()
-	db.Ping()
 
 	//Listen on port 23 - the default telnet port.
 	ln, err := net.Listen("tcp", ":23")
@@ -35,11 +34,13 @@ func main() {
 }
 
 func handleConnection(c net.Conn) error {
+	c.Write([]byte("Welcome."))
+	reader := bufio.NewReader(c)
 	for {
-		msg, err := bufio.NewReader(c).ReadBytes('\n')
+		msg, err := reader.ReadBytes('\n')
 		if err != nil {
 			return err
 		}
-		c.Write(msg)
+		log.Print(msg)
 	}
 }
