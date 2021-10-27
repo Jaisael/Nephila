@@ -41,21 +41,24 @@ type Connection struct {
 	username      string
 	passwordwrong int
 	state         int
+	loggedin      bool
 }
 
 func handleConnection(c net.Conn) error {
-	newConn := &Connection{con: c, state: 1}
+	newConn := &Connection{con: c, state: 1, loggedin: false}
 	c.Write([]byte("Welcome."))
 	c.Write([]byte("Username:"))
 	reader := bufio.NewReader(c)
-	for {
+
+	//Login dialogue.
+	for !newConn.loggedin {
 		msg, err := reader.ReadString('\n')
 		if err != nil {
 			return err
 		}
 		switch newConn.state {
 		case 1:
-			if msg != "" {
+			if isValidName(msg) {
 				if characterExists(msg) {
 					newConn.state = 2
 					newConn.username = strings.Title(strings.ToLower(msg))
@@ -64,13 +67,12 @@ func handleConnection(c net.Conn) error {
 					c.Write([]byte("No record exists of a character with this name. Would you like to create a character with this name?"))
 					newConn.state = 3
 				}
-
 			} else {
 				c.Write([]byte("Username:"))
 			}
 		case 2:
 			if checkPassword(msg, "") {
-				newConn.state = 4
+				newConn.loggedin = true
 			} else {
 				newConn.passwordwrong++
 				if newConn.passwordwrong > 2 {
@@ -82,9 +84,25 @@ func handleConnection(c net.Conn) error {
 				}
 			}
 		case 3:
+			if strings.ToLower(msg) == "y" || strings.ToLower(msg) == "yes" {
 
+			} else {
+				newConn.state = 1
+				c.Write([]byte("Username:"))
+			}
 		default:
 			log.Print(msg)
+		}
+	}
+
+	//Handle commands.
+	for {
+		msg, err := reader.ReadString('\n')
+		if err != nil {
+			return err
+		}
+		if msg != "" {
+			log.Print(newConn.username, msg)
 		}
 	}
 }
@@ -103,6 +121,10 @@ func checkPassword(p, h string) bool {
 		log.Println(err)
 		return false
 	}
+	return true
+}
+
+func isValidName(s string) bool {
 	return true
 }
 
