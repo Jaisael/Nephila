@@ -78,7 +78,7 @@ func handleConnection(c net.Conn) error {
 				c.Write([]byte("Username:"))
 			}
 		case 2:
-			if checkPassword(msg, "") {
+			if checkPassword(newConn.username, msg) {
 				newConn.loggedin = true
 			} else {
 				newConn.passwordwrong++
@@ -129,8 +129,34 @@ func handleConnection(c net.Conn) error {
 	}
 }
 
-func checkPassword(p, h string) bool {
-	err := bcrypt.CompareHashAndPassword([]byte(h), []byte(p))
+func getPasswordHash(s string) (string, error) {
+	rows, err := db.Query("SELECT name, password FROM characters")
+	if err != nil {
+		log.Print(err)
+		return "", err
+	}
+	var name string
+	var password string
+	for rows.Next() {
+		err = rows.Scan(&name, &password)
+		if err != nil {
+			log.Print(err)
+			return "", err
+		}
+		if s == name {
+			return password, nil
+		}
+	}
+	return "", nil
+}
+
+func checkPassword(nm, pwd string) bool {
+	hashP, err := getPasswordHash(nm)
+	if err != nil {
+		log.Println(err)
+		return false
+	}
+	err = bcrypt.CompareHashAndPassword([]byte(hashP), []byte(pwd))
 	if err != nil {
 		log.Println(err)
 		return false
@@ -143,17 +169,14 @@ func isValidName(s string) bool {
 }
 
 func characterExists(s string) bool {
-	rows, err := db.Query("SELECT * FROM characters")
+	rows, err := db.Query("SELECT name FROM characters")
 	if err != nil {
 		log.Print(err)
 		return false
 	}
 	var name string
-	var password string
-	var banned bool
-	var lastonline string
 	for rows.Next() {
-		err = rows.Scan(&name, &password, &banned, &lastonline)
+		err = rows.Scan(&name)
 		if err != nil {
 			log.Print(err)
 			return false
