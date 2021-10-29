@@ -15,6 +15,8 @@ import (
 
 var db *sql.DB
 
+var connectionList map[string]*Connection
+
 func main() {
 	//Connection related data is stored in a sqlite database.
 	dab, err := sql.Open("sqlite3", "./foo.db")
@@ -23,6 +25,8 @@ func main() {
 	}
 	defer db.Close()
 	db = dab
+
+	connectionList = make(map[string]*Connection)
 
 	//Listen on port 23 - the default telnet port.
 	ln, err := net.Listen("tcp", ":23")
@@ -46,6 +50,14 @@ type Connection struct {
 	passwordwrong int
 	state         int
 	loggedin      bool
+}
+
+func (c *Connection) Add() {
+	connectionList[c.username] = c
+}
+
+func (c *Connection) Remove() {
+	delete(connectionList, c.username)
 }
 
 func handleConnection(c net.Conn) error {
@@ -75,6 +87,7 @@ func handleConnection(c net.Conn) error {
 					newConn.state = 3
 				}
 			} else {
+				c.Write([]byte("That is not a valid name."))
 				c.Write([]byte("Username:"))
 			}
 		case 2:
@@ -117,6 +130,7 @@ func handleConnection(c net.Conn) error {
 		}
 	}
 
+	newConn.Add()
 	//Handle commands.
 	for {
 		msg, err := reader.ReadString('\n')
@@ -126,6 +140,7 @@ func handleConnection(c net.Conn) error {
 		if msg != "" {
 			log.Print(newConn.username, msg)
 		}
+		c.Write([]byte("tick"))
 	}
 }
 
@@ -165,6 +180,11 @@ func checkPassword(nm, pwd string) bool {
 }
 
 func isValidName(s string) bool {
+	for _, r := range s {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') {
+			return false
+		}
+	}
 	return true
 }
 
