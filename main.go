@@ -17,6 +17,8 @@ var db *sql.DB
 
 var connectionList map[string]*Connection
 
+var playerCmdQueue chan playerCmd
+
 func main() {
 	//Connection related data is stored in a sqlite database.
 	dab, err := sql.Open("sqlite3", "./foo.db")
@@ -27,6 +29,8 @@ func main() {
 	db = dab
 
 	connectionList = make(map[string]*Connection)
+	playerCmdQueue = make(chan playerCmd, 1024)
+	go serveActiveConnections()
 
 	//Listen on port 23 - the default telnet port.
 	ln, err := net.Listen("tcp", ":23")
@@ -44,6 +48,19 @@ func main() {
 	}
 }
 
+type playerCmd struct {
+	name string
+	cmd  string
+}
+
+func serveActiveConnections() {
+	for {
+		v := <-playerCmdQueue
+		log.Print(v.name, v.cmd)
+
+	}
+}
+
 type Connection struct {
 	con           net.Conn
 	username      string
@@ -52,12 +69,14 @@ type Connection struct {
 	loggedin      bool
 }
 
-func (c *Connection) Add() {
+func addConnection(c *Connection) {
 	connectionList[c.username] = c
+	log.Printf("Adding %v to the list of active connections.", c.username)
 }
 
-func (c *Connection) Remove() {
+func removeConnection(c *Connection) {
 	delete(connectionList, c.username)
+	log.Printf("Removing %v from the list of active connections.", c.username)
 }
 
 func handleConnection(c net.Conn) error {
@@ -130,15 +149,18 @@ func handleConnection(c net.Conn) error {
 		}
 	}
 
-	newConn.Add()
+	addConnection(newConn)
+	defer removeConnection(newConn)
+
 	//Handle commands.
 	for {
 		msg, err := reader.ReadString('\n')
 		if err != nil {
 			return err
 		}
+		msg = strings.TrimSpace(msg)
 		if msg != "" {
-			log.Print(newConn.username, msg)
+			playerCmdQueue <- playerCmd{name: newConn.username, cmd: msg}
 		}
 		c.Write([]byte("tick"))
 	}
