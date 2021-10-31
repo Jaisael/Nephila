@@ -17,7 +17,7 @@ var db *sql.DB
 
 var connectionList map[string]*Connection
 
-var playerCmdQueue chan playerCmd
+var characterCmdQueue chan characterCmd
 
 func main() {
 	//Connection related data is stored in a sqlite database.
@@ -29,7 +29,7 @@ func main() {
 	db = dab
 
 	connectionList = make(map[string]*Connection)
-	playerCmdQueue = make(chan playerCmd, 1024)
+	characterCmdQueue = make(chan characterCmd, 1024)
 	go serveActiveConnections()
 
 	//Listen on port 23 - the default telnet port.
@@ -41,24 +41,42 @@ func main() {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			log.Print("Couldn't accept connection.'")
+			log.Print("Couldn't accept connection.")
 			return
 		}
 		go handleConnection(conn)
 	}
 }
 
-type playerCmd struct {
+type characterCmd struct {
 	name string
 	cmd  string
 }
 
 func serveActiveConnections() {
 	for {
-		v := <-playerCmdQueue
-		log.Print(v.name, v.cmd)
-
+		select {
+		case v := <-characterCmdQueue:
+			log.Print(v.name, v.cmd)
+		case <-time.After(10 * time.Microsecond):
+			for _, w := range connectionList {
+				*w.msgQueue = append(*w.msgQueue, charMsg{inband: []byte("100/100h 100/100m")})
+				for len(*w.msgQueue) > 0 {
+					w.con.Write((*w.msgQueue)[0].outofband)
+					w.con.Write((*w.msgQueue)[0].inband)
+					(*w.msgQueue)[0] = charMsg{}
+					*w.msgQueue = (*w.msgQueue)[1:]
+				}
+			}
+		}
 	}
+}
+
+type charMsg struct {
+	//To be displayed to the end user.
+	inband []byte
+	//Things the client needs - GMCP, telnet, etc.
+	outofband []byte
 }
 
 type Connection struct {
@@ -67,9 +85,12 @@ type Connection struct {
 	passwordwrong int
 	state         int
 	loggedin      bool
+	msgQueue      *[]charMsg
 }
 
 func addConnection(c *Connection) {
+	var mq []charMsg
+	c.msgQueue = &mq
 	connectionList[c.username] = c
 	log.Printf("Adding %v to the list of active connections.", c.username)
 }
@@ -160,7 +181,7 @@ func handleConnection(c net.Conn) error {
 		}
 		msg = strings.TrimSpace(msg)
 		if msg != "" {
-			playerCmdQueue <- playerCmd{name: newConn.username, cmd: msg}
+			characterCmdQueue <- characterCmd{name: newConn.username, cmd: msg}
 		}
 		c.Write([]byte("tick"))
 	}
